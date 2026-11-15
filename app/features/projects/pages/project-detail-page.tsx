@@ -7,6 +7,7 @@ import { useWorkspace } from '~/common/lib/workspace';
 import { readProjectRouteCache, useProjectRouteCache } from '~/common/lib/project-route-cache';
 import type { Project } from '~/common/lib/projects';
 import { ProjectSummary } from '../components/project-summary';
+import { MemberAvatars, ProjectMembersDialog, type ProjectMember } from '../components/project-members';
 import { loadProject, updateProject } from '../server/projects.server';
 
 export { routeHeaders as headers } from '~/common/server/backend.server';
@@ -29,6 +30,9 @@ export default function ProjectDetailPage() {
 }
 
 function ProjectWorkspace({ project, loaded }: { project: Project; loaded: ReturnType<typeof useLoaderData<typeof loader>> }) {
+  const { member } = useWorkspace();
+  const [membersOpen, setMembersOpen] = useState(false);
+  const projectMembers: ProjectMember[] = member ? [{ id: member.id, display_name: member.display_name || member.email, email: member.email, role: 'owner' }] : [];
   const save = useFetcher<typeof action>();
   const revalidator = useRevalidator();
   const [editing, setEditing] = useState(false);
@@ -46,7 +50,7 @@ function ProjectWorkspace({ project, loaded }: { project: Project; loaded: Retur
   }
   return <section className="page">
     <div className="mb-7 flex items-center justify-between"><Link to="/projects" className="inline-flex items-center gap-2 text-sm text-muted hover:text-white"><ArrowLeft size={17}/>프로젝트</Link><button className="icon-button" aria-label="프로젝트 새로고침" disabled={pending || revalidator.state !== 'idle'} onClick={() => void revalidator.revalidate()}><RefreshCw size={17} className={revalidator.state !== 'idle' ? 'spin' : ''}/></button></div>
-    <div className="mb-8 flex items-start justify-between gap-5 max-small:flex-col"><div className="min-w-0"><div className="flex items-start gap-2"><h1 className="text-2xl font-semibold tracking-tight wrap-anywhere">{project.name}</h1><button className="icon-button shrink-0" aria-label="프로젝트 이름 변경" onClick={edit} disabled={pending}><Pencil size={15}/></button></div><p className="mt-2 text-xs text-muted"><time dateTime={project.updated_at}>{dateLabel(project.updated_at)}</time> 업데이트</p></div><Link to={chatPath} className="button button-primary shrink-0"><Plus size={17}/>새 대화</Link></div>
+    <div className="mb-8 flex flex-wrap items-start justify-between gap-5"><div className="min-w-0"><div className="flex items-start gap-2"><h1 className="text-2xl font-semibold tracking-tight wrap-anywhere">{project.name}</h1><button className="icon-button shrink-0" aria-label="프로젝트 이름 변경" onClick={edit} disabled={pending}><Pencil size={15}/></button></div><p className="mt-2 text-xs text-muted"><time dateTime={project.updated_at}>{dateLabel(project.updated_at)}</time> 업데이트</p></div><div className="flex shrink-0 flex-wrap items-center gap-2"><button type="button" className="button button-secondary gap-2.5" onClick={() => setMembersOpen(true)} aria-label="프로젝트 멤버 관리"><MemberAvatars members={projectMembers}/><span>멤버</span><span className="text-xs text-muted">{projectMembers.length}</span></button><Link to={chatPath} className="button button-primary shrink-0"><Plus size={17}/>새 대화</Link></div></div>
     {loaded.error && <div className="mb-5"><Notice error>{loaded.error}</Notice></div>}
     {editing && <save.Form method="post" className="mb-5 space-y-4 rounded-xl border border-line bg-panel p-5" onSubmit={() => setSubmitted(true)}>
       <input type="hidden" name="intent" value="save"/><input type="hidden" name="member_id" value={loaded.memberId}/><input type="hidden" name="revision" value={revision}/>
@@ -55,6 +59,7 @@ function ProjectWorkspace({ project, loaded }: { project: Project; loaded: Retur
       <div className="flex justify-end gap-3"><button type="button" className="button button-secondary" disabled={pending} onClick={() => setEditing(false)}>취소</button><button className="button button-primary" disabled={pending || !name.trim()}>{pending && <LoaderCircle size={16} className="spin"/>}저장</button></div>
     </save.Form>}
     {!editing && submitted && save.data?.project && !save.data.error && <div className="mb-4"><Notice>프로젝트 이름을 변경했습니다.</Notice></div>}
+    {membersOpen && <ProjectMembersDialog projectName={project.name} members={projectMembers} viewerId={loaded.memberId} canManage onClose={() => setMembersOpen(false)}/>}
     <ProjectSummary project={project} memberId={loaded.memberId} hasThreads={!loaded.error && (loaded.threads.items.length > 0 || Boolean(loaded.cursor))}/>
     <section aria-labelledby="project-chats-heading" className="mt-10">
       <div className="mb-4 flex items-center justify-between"><h2 id="project-chats-heading" className="text-base font-medium">대화</h2><Link to={chatPath} className="inline-flex items-center gap-2 text-sm text-muted hover:text-white"><Plus size={15}/>새 대화</Link></div>
