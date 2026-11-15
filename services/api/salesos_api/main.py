@@ -23,7 +23,7 @@ from .providers import Providers, CATALOG
 from .devices import Devices
 from .files import Files
 from .tools import BusinessTools
-from .chat import SalesChat
+from .chat import SalesChat, VerifiedProjectScope
 from .line import LineBridge
 from .projects import Projects, ProjectCreate, ProjectUpdate, ProjectSummary
 
@@ -209,7 +209,7 @@ def create_app(settings: Settings | None = None):
     @app.get('/api/projects/{project_id}')
     async def get_project(project_id: str, request: Request):
         member = await security.user(request)
-        return await projects.get(member['id'], project_id)
+        return {**await projects.get(member['id'], project_id), 'member_id': member['id']}
 
     @app.get('/api/projects/{project_id}/overview')
     async def project_overview(project_id: str, request: Request, limit: int = Query(default=50, ge=1, le=100), after: str | None = None):
@@ -218,7 +218,9 @@ def create_app(settings: Settings | None = None):
         threads = {'items': [], 'has_more': False, 'after': None}
         threads_error = ''
         try:
-            page = await chat.store.load_threads(limit, after, 'desc', {'member': member, 'project_id': project_id})
+            context = {'member': member, 'project_id': project_id,
+                       '_verified_project_scope': VerifiedProjectScope(member['id'], project_id)}
+            page = await chat.store.load_threads(limit, after, 'desc', context)
             threads = {'items': [{'id': thread.id, 'title': thread.title, 'created_at': thread.created_at.isoformat()} for thread in page.data],
                        'has_more': page.has_more, 'after': page.after}
         except (HTTPException, NotFoundError) as exc:
@@ -259,7 +261,7 @@ def create_app(settings: Settings | None = None):
     @app.get('/api/connections')
     async def connections(request: Request):
         member = await security.user(request)
-        return {'items': await providers.connections(member['id'])}
+        return {'member_id': member['id'], 'items': await providers.connections(member['id'])}
 
     @app.post('/api/connections/{provider}/start')
     async def connect(provider: str, request: Request, body: ConnectionBody = Body(default=ConnectionBody())):
@@ -269,7 +271,8 @@ def create_app(settings: Settings | None = None):
     @app.get('/api/connections/{provider}/accounts')
     async def connection_accounts(provider: str, request: Request):
         member = await security.user(request)
-        return {'items': [{**item, 'id': item['connection_id']} for item in await providers.accounts(member['id'], provider)]}
+        return {'member_id': member['id'],
+                'items': [{**item, 'id': item['connection_id']} for item in await providers.accounts(member['id'], provider)]}
 
     @app.patch('/api/connections/{provider}/accounts/{connection_id}')
     async def toggle_account(provider: str, connection_id: str, body: ToggleBody, request: Request):
@@ -351,7 +354,7 @@ def create_app(settings: Settings | None = None):
     @app.get('/api/devices')
     async def list_devices(request: Request):
         member = await security.user(request)
-        return {'items': await devices.list(member['id'])}
+        return {'member_id': member['id'], 'items': await devices.list(member['id'])}
 
     @app.post('/api/device-enrollments')
     async def enrollment(request: Request):
@@ -405,7 +408,14 @@ def create_app(settings: Settings | None = None):
     @app.get('/api/jobs')
     async def jobs(request: Request):
         member = await security.user(request)
-        return {'items': [await public_job(row) for row in await repo.list('jobs', member['id'], limit=100)]}
+        rows = await repo.list('jobs', member['id'], limit=100)
+        slots = asyncio.Semaphore(6)
+
+        async def checked_job(row):
+            async with slots:
+                return await public_job(row)
+
+        return {'member_id': member['id'], 'items': await asyncio.gather(*(checked_job(row) for row in rows))}
 
     @app.get('/api/jobs/{id}')
     async def job(id: str, request: Request):
@@ -435,7 +445,7 @@ def create_app(settings: Settings | None = None):
             # Uploads already store basenames; also guard legacy metadata.
             name = (name if isinstance(name, str) else '').replace('\\', '/').rsplit('/', 1)[-1][:180]
             items.append({'id': row['id'], 'name': name or '이름 없는 파일', 'created_at': row['created_at']})
-        return {'items': items, 'has_more': len(rows) > limit}
+        return {'member_id': member['id'], 'items': items, 'has_more': len(rows) > limit}
 
     @app.post('/api/attachments/upload')
     async def upload(request: Request, file: UploadFile = File(...)):

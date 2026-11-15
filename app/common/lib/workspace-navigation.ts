@@ -1,7 +1,7 @@
 import type { ShouldRevalidateFunctionArgs } from 'react-router';
 
 const WORKSPACE_PATH = /^\/(?:chat|projects(?:\/prj_[a-f0-9]{32}(?:\/chat)?)?|connections(?:\/[^/]+)?|jobs|files|materials|settings)$/;
-const PAGE_QUERIES = ['after', 'new', 'thread'];
+const PAGE_QUERIES = ['after', 'new', 'thread', 'offset', 'device', 'root', 'query', 'job'];
 
 // The mounted layout already owns member, connection and sidebar project data.
 // Ordinary page navigation can reuse it; actions and explicit refreshes cannot.

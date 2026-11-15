@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, LoaderCircle, Plus, RefreshCw, ShieldCheck } from 'lucide-react';
-import { data, Link, useFetcher, useLoaderData, useRevalidator, type LoaderFunctionArgs } from 'react-router';
+import { data, Link, useFetcher, useLoaderData, useRevalidator, type LoaderFunctionArgs, type ClientLoaderFunctionArgs } from 'react-router';
 import { ServiceIcon } from '~/common/components/icons';
 import { Notice } from '~/common/components/ui';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '~/common/components/ui/alert-dialog';
-import { CATALOG, isAccountProvider, type ConnectionAccount, type Member } from '~/common/lib/api';
+import { CATALOG, isAccountProvider, type ConnectionAccount } from '~/common/lib/api';
+import { readProjectRouteCache, useProjectRouteCache } from '~/common/lib/project-route-cache';
 import { useWorkspace } from '~/common/lib/workspace';
 import { createBackend, routeError } from '~/common/server/backend.server';
 import type { action as connectionAction } from './connection-action';
@@ -20,17 +21,22 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   let error = '';
   try {
     if (await backend.hasSession()) {
-      const member = await backend.request<Member>('/me');
-      memberId = member.id;
-      const result = await backend.request<{ items: ConnectionAccount[] }>('/connections/' + encodeURIComponent(service.provider) + '/accounts', { headers: { 'X-SalesOS-Member': memberId } });
+      const result = await backend.request<{ items: ConnectionAccount[]; member_id: string }>('/connections/' + encodeURIComponent(service.provider) + '/accounts');
+      memberId = result.member_id;
       items = result.items;
     }
   } catch (cause) { error = routeError(cause); }
   return data({ service, items, memberId, error }, { headers: backend.headers });
 }
 
+export function clientLoader({ request, serverLoader }: ClientLoaderFunctionArgs) {
+  return readProjectRouteCache(request, () => serverLoader<typeof loader>());
+}
+
 export default function ConnectionDetailPage() {
   const loaded = useLoaderData<typeof loader>();
+  const { member } = useWorkspace();
+  useProjectRouteCache(loaded, member?.id);
   return <ConnectionAccounts key={loaded.service.provider + ':' + loaded.memberId} loaded={loaded}/>;
 }
 

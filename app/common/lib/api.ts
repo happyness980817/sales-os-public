@@ -1,3 +1,5 @@
+import { invalidateProjectRouteCache, resetProjectRouteCache } from './project-route-cache';
+
 export interface PublicConfig {
   supabase_url: string;
   supabase_publishable_key: string;
@@ -38,11 +40,15 @@ export interface Device { id: string; name: string; status: string; last_seen_at
 
 // ChatKit owns chat requests and streaming; page data uses React Router loaders/actions.
 export function createApi(memberId?: string) {
-  const authenticatedFetch: typeof fetch = (input, init = {}) => {
+  const authenticatedFetch: typeof fetch = async (input, init = {}) => {
     const headers = new Headers(input instanceof Request ? input.headers : undefined);
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
     if (memberId) headers.set('X-SalesOS-Member', memberId);
-    return fetch(input, { ...init, headers, credentials: 'same-origin' });
+    const response = await fetch(input, { ...init, headers, credentials: 'same-origin' });
+    const path = new URL(input instanceof Request ? input.url : String(input), 'https://salesos.invalid').pathname;
+    if (response.status === 401 || response.status === 403) resetProjectRouteCache();
+    if (response.ok && path === '/api/attachments/upload') invalidateProjectRouteCache('/materials');
+    return response;
   };
   return { fetch: authenticatedFetch };
 }

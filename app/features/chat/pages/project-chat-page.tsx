@@ -4,7 +4,6 @@ import { BackendError, createBackend, routeError } from '~/common/server/backend
 import { Notice } from '~/common/components/ui';
 import { useWorkspace } from '~/common/lib/workspace';
 import { readProjectRouteCache, useProjectRouteCache } from '~/common/lib/project-route-cache';
-import type { Member } from '~/common/lib/api';
 import type { Project } from '~/common/lib/projects';
 export { routeHeaders as headers } from '~/common/server/backend.server';
 export { shouldRevalidateChatNavigation as shouldRevalidate } from '~/common/lib/chat-navigation';
@@ -13,9 +12,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const backend = createBackend(request);
   try {
     if (!await backend.hasSession()) return data({ project: null as Project | null, memberId: '', error: '' }, { headers: backend.headers });
-    const member = await backend.request<Member>('/me');
-    const project = await backend.request<Project>('/projects/' + encodeURIComponent(params.projectId || ''), { headers: { 'X-SalesOS-Member': member.id } });
-    return data({ project, memberId: member.id, error: '' }, { headers: backend.headers });
+    const { member_id: memberId, ...project } = await backend.request<Project & { member_id: string }>('/projects/' + encodeURIComponent(params.projectId || ''));
+    return data({ project, memberId, error: '' }, { headers: backend.headers });
   } catch (error) {
     if (error instanceof BackendError && error.status === 404) throw new Response('프로젝트를 찾을 수 없습니다.', { status: 404, headers: backend.headers });
     return data({ project: null as Project | null, memberId: '', error: routeError(error) }, { headers: backend.headers });

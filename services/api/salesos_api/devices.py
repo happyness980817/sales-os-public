@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -36,8 +37,8 @@ class Devices:
 
     async def list(self,owner):
         result=[]
-        roots=await self.repo.list('roots',owner)
-        for row in await self.repo.list('devices',owner):
+        roots, devices = await asyncio.gather(self.repo.list('roots', owner), self.repo.list('devices', owner))
+        for row in devices:
             data=row['data']
             if data.get('revoked'):continue
             seen=data.get('last_seen_at')

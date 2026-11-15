@@ -33,18 +33,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let signedIn = false;
   const failure = new URL(request.url).searchParams.get('auth_error');
   const authError = failure === 'cancelled' ? '로그인이 취소되었습니다. 다시 시도해 주세요.' : failure ? '로그인 링크가 만료되었거나 확인할 수 없습니다. 다시 로그인해 주세요.' : '';
-  const [configuration, session] = await Promise.allSettled([
+  // Configuration can include external capability checks. Start private page
+  // data as soon as the cookie session is available, independently of config.
+  const [configuration, workspaceResult] = await Promise.allSettled([
     backend.request<PublicConfig>('/config'),
-    authError ? Promise.resolve(false) : backend.hasSession(),
+    (async () => {
+      signedIn = !authError && await backend.hasSession();
+      return signedIn ? backend.request<{ member: Member; items: Connection[]; projects: Project[]; projects_error: string }>('/workspace') : null;
+    })(),
   ]);
   if (configuration.status === 'fulfilled') config = configuration.value;
   else configError = routeError(configuration.reason);
   if (!authError && config) {
     try {
-      if (session.status === 'rejected') throw session.reason;
-      signedIn = session.value;
-      if (signedIn) {
-        const workspace = await backend.request<{ member: Member; items: Connection[]; projects: Project[]; projects_error: string }>('/workspace');
+      if (workspaceResult.status === 'rejected') throw workspaceResult.reason;
+      const workspace = workspaceResult.value;
+      if (workspace) {
         member = workspace.member;
         items = CATALOG.map(c => ({ ...c, ...workspace.items.find(row => row.provider === c.provider) }));
         projects = workspace.projects;

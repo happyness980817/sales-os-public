@@ -64,3 +64,14 @@ test('returning to connections does not reload shared data, but a toggle and ref
     assert.equal(loads, 4);
   } finally { router.dispose(); }
 });
+
+
+test('material pagination and local-file selection do not reload the workspace', () => {
+  for (const [from, to] of [
+    ['/materials', '/materials?offset=50'],
+    ['/materials?offset=50', '/projects'],
+    ['/files', '/files?device=pc-1&root=folder-1&query=report&job=job-1'],
+    ['/files?device=pc-1&root=folder-1', '/connections'],
+  ]) assert.equal(shouldRevalidateWorkspaceNavigation(args(from, to)), false);
+  assert.equal(shouldRevalidateWorkspaceNavigation(args('/files', '/files?auth_error=expired')), true);
+});

@@ -3,9 +3,11 @@ import { ArrowRight, FileText, Folder, FolderOpen, LoaderCircle, Monitor, Plus, 
 import { dateLabel, type Device, type Job } from '~/common/lib/api';
 import { Notice, Empty } from '~/common/components/ui';
 import { data, Form, redirect, useActionData, useLoaderData, useNavigation, useRevalidator, useSearchParams } from 'react-router';
-import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
+import type { ActionFunctionArgs, LoaderFunctionArgs, ClientLoaderFunctionArgs } from 'react-router';
+import { readProjectRouteCache, useProjectRouteCache } from '~/common/lib/project-route-cache';
 import { useWorkspace } from '~/common/lib/workspace';
 import { assertSameOrigin, createBackend, routeError } from '~/common/server/backend.server';
+import { useRouteRefresh } from '~/common/lib/route-refresh';
 import { STATUS } from '~/features/jobs/status';
 export { routeHeaders as headers } from '~/common/server/backend.server';
 
@@ -15,15 +17,18 @@ const pendingStatuses = ['pending', 'processing', 'running', 'waiting_device', '
 export async function loader({ request }: LoaderFunctionArgs) {
   const backend = await createBackend(request);
   let devices: Device[] = [];
+  let memberId = '';
   try {
-    if (!await backend.hasSession()) return data({ devices, job: null as Job | null, error: '' }, { headers: backend.headers });
-    devices = (await backend.request<{ items: Device[] }>('/devices')).items;
+    if (!await backend.hasSession()) return data({ devices, memberId, job: null as Job | null, error: '' }, { headers: backend.headers });
+    const result = await backend.request<{ items: Device[]; member_id: string }>('/devices');
+    devices = result.items;
+    memberId = result.member_id;
     const jobId = new URL(request.url).searchParams.get('job');
-    if (jobId && jobId.length > 100) return data({ devices, job: null as Job | null, error: '작업 주소를 확인해 주세요.' }, { headers: backend.headers });
-    const job = jobId ? await backend.request<Job>(`/jobs/${encodeURIComponent(jobId)}`) : null;
-    return data({ devices, job, error: '' }, { headers: backend.headers });
+    if (jobId && jobId.length > 100) return data({ devices, memberId, job: null as Job | null, error: '작업 주소를 확인해 주세요.' }, { headers: backend.headers });
+    const job = jobId ? await backend.request<Job>(`/jobs/${encodeURIComponent(jobId)}`, { headers: { 'X-SalesOS-Member': memberId } }) : null;
+    return data({ devices, memberId, job, error: '' }, { headers: backend.headers });
   } catch (error) {
-    return data({ devices, job: null as Job | null, error: routeError(error) }, { headers: backend.headers });
+    return data({ devices, memberId, job: null as Job | null, error: routeError(error) }, { headers: backend.headers });
   }
 }
 
@@ -54,9 +59,19 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 }
 
+export function clientLoader({ request, serverLoader }: ClientLoaderFunctionArgs) {
+  return readProjectRouteCache(request, () => serverLoader<typeof loader>());
+}
+
 export default function FilesPage() {
   const { authenticated, onLogin, enroll, member } = useWorkspace();
-  const { devices, job, error: loadError } = useLoaderData<typeof loader>();
+  const initial = useLoaderData<typeof loader>();
+  const { data: loaded, refresh } = useRouteRefresh(initial);
+  useProjectRouteCache(loaded, member?.id);
+  const sameMember = authenticated && loaded.memberId === member?.id;
+  const devices = sameMember ? loaded.devices : [];
+  const job = sameMember ? loaded.job : null;
+  const loadError = loaded.error;
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const { revalidate, state: revalidationState } = useRevalidator();
@@ -83,9 +98,9 @@ export default function FilesPage() {
   }
   useEffect(() => {
     if (!authenticated || !job || !pendingStatuses.includes(job.status)) return;
-    const timer = setInterval(() => { if (!document.hidden) void revalidate(); }, 2500);
+    const timer = setInterval(() => { if (!document.hidden) refresh(); }, 2500);
     return () => clearInterval(timer);
-  }, [authenticated, job?.id, job?.status, revalidate]);
+  }, [authenticated, job?.id, job?.status, refresh]);
 
   return <section className="page"><div className="page-heading"><div><div className="eyebrow">ON YOUR COMPUTER</div><h1>로컬</h1><p>선택한 폴더의 자료를 대화에 활용하세요.</p></div><button className="button button-secondary compact" onClick={authenticated ? onEnroll : onLogin}><Plus size={16}/>PC 연결</button></div>{authenticated && error && <Notice error>{error}</Notice>}
     {!authenticated ? <Empty icon={<FolderOpen size={28}/>} title="내 컴퓨터의 자료와 연결하세요" action={<button className="button button-primary" onClick={onLogin}>로그인</button>}>지정한 폴더에서 필요한 파일만 읽어옵니다.</Empty> : !devices.length && !error ? <Empty icon={<Monitor size={29}/>} title="아직 연결된 PC가 없습니다" action={<button className="button button-primary" onClick={onEnroll}>PC 연결하기<ArrowRight size={16}/></button>}>PC 연결 프로그램에서 폴더를 선택하면<br/>웹과 LINE에서 자료를 찾아 읽을 수 있습니다.</Empty> : devices.length > 0 ? <>

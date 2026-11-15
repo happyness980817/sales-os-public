@@ -24,7 +24,7 @@ def test_materials_requires_login_and_empty_list_is_honest(client, headers):
     assert client.get('/api/materials').status_code == 401
     response = client.get('/api/materials', headers=headers)
     assert response.status_code == 200
-    assert response.json() == {'items': [], 'has_more': False}
+    assert response.json() == {'member_id': DEV_USER_ID, 'items': [], 'has_more': False}
     assert response.headers['cache-control'] == 'no-store'
 
 
@@ -53,21 +53,21 @@ def test_real_uploads_are_newest_first_paginated_and_metadata_only(client, app, 
     first = client.get('/api/materials?limit=2&offset=0', headers=headers)
     assert first.status_code == 200
     assert first.json() == {
-        'items': [
+        'member_id': DEV_USER_ID, 'items': [
             {'id': image['id'], 'name': 'card.png', 'created_at': '2026-11-03T00:00:00+00:00'},
             {'id': newer['id'], 'name': 'proposal.txt', 'created_at': '2026-11-02T00:00:00+00:00'},
         ], 'has_more': True,
     }
     second = client.get('/api/materials?limit=2&offset=2', headers=headers)
     assert second.json() == {
-        'items': [{'id': older['id'], 'name': 'meeting.md', 'created_at': '2026-11-01T00:00:00+00:00'}],
+        'member_id': DEV_USER_ID, 'items': [{'id': older['id'], 'name': 'meeting.md', 'created_at': '2026-11-01T00:00:00+00:00'}],
         'has_more': False,
     }
     all_text = first.text + second.text
     for forbidden in [image['preview_url'], 'private-meeting-content', 'private-proposal-content',
                       'pc-private.txt', pc_file['id'], 'other-private.txt', 'object_path', 'owner_id']:
         assert forbidden not in all_text
-    assert client.get('/api/materials?offset=3', headers=headers).json() == {'items': [], 'has_more': False}
+    assert client.get('/api/materials?offset=3', headers=headers).json() == {'member_id': DEV_USER_ID, 'items': [], 'has_more': False}
 
 
 def test_equal_upload_dates_have_stable_id_order_and_deleted_attachments_disappear(client, app, headers):

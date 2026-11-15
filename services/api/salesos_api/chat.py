@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import uuid4
 from pydantic import TypeAdapter
@@ -22,6 +23,13 @@ from fastapi import HTTPException
 
 ITEM=TypeAdapter(ThreadItem)
 ATTACHMENT=TypeAdapter(Attachment)
+
+
+@dataclass(frozen=True)
+class VerifiedProjectScope:
+    # Created only after an owned project read, and retained only for that read request.
+    owner_id: str
+    project_id: str
 
 
 class ChatStore(Store[dict]):
@@ -55,7 +63,11 @@ class ChatStore(Store[dict]):
 
     async def validate_scope(self, context):
         if 'project_id' in context:
-            await self.validate_project(context['member']['id'], context['project_id'])
+            owner, project_id = context['member']['id'], context['project_id']
+            verified = context.get('_verified_project_scope')
+            if isinstance(verified, VerifiedProjectScope) and (verified.owner_id, verified.project_id) == (owner, project_id):
+                return
+            await self.validate_project(owner, project_id)
 
     @staticmethod
     def matches_scope(row, context):

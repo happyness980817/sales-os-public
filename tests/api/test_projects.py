@@ -41,7 +41,7 @@ def test_projects_require_auth_validate_input_and_compare_revisions(client, head
     assert first['name'] == '고객 A' and first['revision'] == 1
     assert first['overview'].startswith('# 목표')
     assert 'owner_id' not in first
-    assert client.get('/api/projects/' + first['id'], headers=headers).json() == first
+    assert client.get('/api/projects/' + first['id'], headers=headers).json() == {**first, 'member_id': DEV_USER_ID}
     saved = client.patch('/api/projects/' + first['id'], headers=headers,
                          json={'overview': '# 새 개요', 'revision': first['revision']})
     assert saved.status_code == 200 and saved.json()['revision'] == 2

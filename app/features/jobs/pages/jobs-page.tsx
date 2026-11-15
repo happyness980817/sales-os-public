@@ -3,20 +3,22 @@ import { ArrowRight, Check, CircleAlert, CircleCheck, Clock3, RefreshCw } from '
 import { dateLabel, type Job } from '~/common/lib/api';
 import { Modal, Notice, Empty } from '~/common/components/ui';
 import { data, useFetcher, useLoaderData, useNavigate, useRevalidator } from 'react-router';
-import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router';
+import type { ActionFunctionArgs, LoaderFunctionArgs, ClientLoaderFunctionArgs } from 'react-router';
+import { readProjectRouteCache, useProjectRouteCache } from '~/common/lib/project-route-cache';
 import { useWorkspace } from '~/common/lib/workspace';
 import { assertSameOrigin, createBackend, routeError } from '~/common/server/backend.server';
 export { routeHeaders as headers } from '~/common/server/backend.server';
+import { useRouteRefresh } from '~/common/lib/route-refresh';
 import { STATUS } from '../status';
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const backend = await createBackend(request);
   try {
-    if (!await backend.hasSession()) return data({ items: [] as Job[], error: '' }, { headers: backend.headers });
-    const result = await backend.request<{ items: Job[] }>('/jobs');
-    return data({ ...result, error: '' }, { headers: backend.headers });
+    if (!await backend.hasSession()) return data({ items: [] as Job[], memberId: '', error: '' }, { headers: backend.headers });
+    const { member_id: memberId, ...result } = await backend.request<{ items: Job[]; member_id: string }>('/jobs');
+    return data({ ...result, memberId, error: '' }, { headers: backend.headers });
   } catch (error) {
-    return data({ items: [] as Job[], error: routeError(error) }, { headers: backend.headers });
+    return data({ items: [] as Job[], memberId: '', error: routeError(error) }, { headers: backend.headers });
   }
 }
 
@@ -38,9 +40,17 @@ export async function action({ request }: ActionFunctionArgs) {
 
 const isActive = (job: Job) => ['pending', 'processing', 'running', 'waiting_input', 'waiting_device', 'retry_wait'].includes(job.status);
 
+export function clientLoader({ request, serverLoader }: ClientLoaderFunctionArgs) {
+  return readProjectRouteCache(request, () => serverLoader<typeof loader>());
+}
+
 export default function JobsPage() {
   const { authenticated, onLogin, member } = useWorkspace();
-  const { items: jobs, error: loadError } = useLoaderData<typeof loader>();
+  const initial = useLoaderData<typeof loader>();
+  const { data: loaded, refresh } = useRouteRefresh(initial);
+  useProjectRouteCache(loaded, member?.id);
+  const jobs = authenticated && loaded.memberId === member?.id ? loaded.items : [];
+  const loadError = loaded.error;
   const revalidator = useRevalidator();
   const fetcher = useFetcher<typeof action>();
   const navigate = useNavigate();
@@ -53,9 +63,9 @@ export default function JobsPage() {
 
   useEffect(() => {
     if (!authenticated) return;
-    const timer = setInterval(() => { if (!document.hidden) void revalidate(); }, 15000);
+    const timer = setInterval(() => { if (!document.hidden) refresh(); }, 15000);
     return () => clearInterval(timer);
-  }, [authenticated, revalidate]);
+  }, [authenticated, refresh]);
   useEffect(() => {
     if (fetcher.state === 'idle' && fetcher.data?.cancelledId) setSelectedId(null);
   }, [fetcher.state, fetcher.data]);

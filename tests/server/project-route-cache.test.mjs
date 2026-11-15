@@ -12,6 +12,8 @@ test('project URLs retain pagination while ignoring presentation and ChatKit thr
   assert.equal(projectRouteCacheKey('https://sales.test/projects?new=1&after=page-2'), '/projects?after=page-2');
   assert.equal(projectRouteCacheKey('/projects/prj_one/chat?thread=thr_one'), '/projects/prj_one/chat');
   assert.notEqual(projectRouteCacheKey('/projects?after=one'), projectRouteCacheKey('/projects?after=two'));
+  assert.equal(projectRouteCacheKey('/files?device=pc&root=folder&query=report&job=one'), '/files?job=one');
+  assert.notEqual(projectRouteCacheKey('/files?job=one'), projectRouteCacheKey('/files?job=two'));
 });
 
 test('SSR never shares a route response between requests', async () => {
@@ -135,4 +137,63 @@ test('route revisits reuse project data while mutation and explicit refresh fetc
     await router.revalidate();
     assert.equal(calls, 3);
   } finally { router.dispose(); }
+});
+
+
+test('accounts, jobs, files and material revisits reuse their own authenticated data', async () => {
+  const cache = createProjectRouteCache();
+  cache.setOwner('employee-a');
+  const paths = ['/connections/google_drive', '/jobs', '/files', '/materials', '/materials?offset=50'];
+  let calls = 0;
+  for (const key of paths) await cache.read(key, async () => { calls++; return data(); }, signal());
+  for (const key of [...paths].reverse()) await cache.read(key, async () => assert.fail('revisit must not fetch'), signal());
+  assert.equal(calls, paths.length);
+});
+
+test('polling refreshes only its route while preserving other cached screens', async () => {
+  const cache = createProjectRouteCache();
+  cache.setOwner('employee-a');
+  await cache.read('/projects', async () => data(), signal());
+  await cache.read('/jobs', async () => data('employee-a', 'Queued'), signal());
+  const work = deferred();
+  const pending = cache.read('/jobs', () => work.promise, signal(), true);
+  assert.equal((await cache.read('/jobs', async () => assert.fail('poll must retain the visible cache'), signal())).project.name, 'Queued');
+  work.resolve(data('employee-a', 'Done'));
+  await pending;
+  assert.equal((await cache.read('/jobs', async () => assert.fail('fresh jobs'), signal())).project.name, 'Done');
+  await cache.read('/projects', async () => assert.fail('unrelated project was invalidated'), signal());
+  assert.equal(projectRouteCacheKey('/jobs?_refresh=1'), '/jobs');
+});
+
+test('newer refreshes cannot be overwritten by an older request finishing last', async () => {
+  const cache = createProjectRouteCache();
+  cache.setOwner('employee-a');
+  const old = deferred();
+  const pending = cache.read('/jobs', () => old.promise, signal(), true);
+  await cache.read('/jobs', async () => data('employee-a', 'Latest'), signal(), true);
+  old.resolve(data('employee-a', 'Older'));
+  const result = await pending;
+  cache.seed('/jobs', result);
+  assert.equal((await cache.read('/jobs', async () => assert.fail('use latest cache'), signal())).project.name, 'Latest');
+});
+
+test('an expired session discovered by polling clears all cached private screens', async () => {
+  const cache = createProjectRouteCache();
+  cache.setOwner('employee-a');
+  await cache.read('/materials', async () => data(), signal());
+  await cache.read('/jobs', async () => ({ memberId: '', error: '로그인이 필요합니다.' }), signal(), true);
+  let requests = 0;
+  await cache.read('/materials', async () => { requests++; return { memberId: '', error: '' }; }, signal());
+  assert.equal(requests, 1);
+});
+
+test('upload invalidation refreshes every material page while retaining project data', async () => {
+  const cache = createProjectRouteCache();
+  cache.setOwner('employee-a');
+  for (const key of ['/materials', '/materials?offset=50', '/projects']) await cache.read(key, async () => data(), signal());
+  cache.invalidate('/materials');
+  let requests = 0;
+  for (const key of ['/materials', '/materials?offset=50']) await cache.read(key, async () => { requests++; return data(); }, signal());
+  await cache.read('/projects', async () => assert.fail('project remains cached'), signal());
+  assert.equal(requests, 2);
 });

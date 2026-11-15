@@ -13,7 +13,7 @@ export function claimSummaryAttempt(status: Project['summary_status'], revision:
   return true;
 }
 
-export function ProjectSummary({ project, memberId, hasThreads }: { project: Project; memberId: string; hasThreads: boolean }) {
+export function ProjectSummary({ project, memberId, hasThreads, onRefresh }: { project: Project; memberId: string; hasThreads: boolean; onRefresh?: () => void }) {
   const summary = useFetcher<typeof summaryAction>();
   const edit = useFetcher<typeof summaryAction>();
   const revalidator = useRevalidator();
@@ -47,10 +47,10 @@ export function ProjectSummary({ project, memberId, hasThreads }: { project: Pro
   useEffect(() => {
     if (status !== 'pending' || !hasThreads || busy) return;
     const interval = setInterval(() => {
-      if (!document.hidden && revalidator.state === 'idle') void revalidator.revalidate();
+      if (!document.hidden && revalidator.state === 'idle') onRefresh?.();
     }, 5000);
     return () => clearInterval(interval);
-  }, [status, hasThreads, busy, revalidator]);
+  }, [status, hasThreads, busy, revalidator.state, onRefresh]);
   return <section aria-labelledby="project-summary-heading" className="rounded-xl border border-line bg-panel p-6 max-small:p-4">
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 id="project-summary-heading" className="text-2xl font-semibold tracking-tight">프로젝트 요약</h2><button type="button" className="button button-secondary compact" disabled={busy} onClick={() => { setEditing(true); setSubmitted(false); setSaved(false); }}>요약 수정</button></div>
     {editing && <edit.Form method="post" action={actionPath} className="mb-5 space-y-3" onSubmit={() => { setSubmitted(true); setSaved(false); }}>

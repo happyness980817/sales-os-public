@@ -1,8 +1,9 @@
 import { ArrowRight, Files, FileText, LoaderCircle, RefreshCw } from 'lucide-react';
 import { data, Link, useLoaderData, useNavigation, useRevalidator, useSearchParams } from 'react-router';
-import type { LoaderFunctionArgs } from 'react-router';
+import type { LoaderFunctionArgs, ClientLoaderFunctionArgs } from 'react-router';
 import { Empty, Notice } from '~/common/components/ui';
 import type { MaterialsPage as MaterialsResponse } from '~/common/lib/api';
+import { readProjectRouteCache, useProjectRouteCache } from '~/common/lib/project-route-cache';
 import { useWorkspace } from '~/common/lib/workspace';
 import { createBackend, routeError } from '~/common/server/backend.server';
 export { routeHeaders as headers } from '~/common/server/backend.server';
@@ -18,11 +19,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const offset = Number.isInteger(requestedOffset) && requestedOffset >= 0 && requestedOffset <= 100000 ? requestedOffset : 0;
   const empty: MaterialsResponse = { items: [], has_more: false };
   try {
-    if (!await backend.hasSession()) return data({ ...empty, offset, error: '' }, { headers: backend.headers });
-    const result = await backend.request<MaterialsResponse>(`/materials?limit=${PAGE_SIZE}&offset=${offset}`);
-    return data({ ...result, offset, error: '' }, { headers: backend.headers });
+    if (!await backend.hasSession()) return data({ ...empty, memberId: '', offset, error: '' }, { headers: backend.headers });
+    const { member_id: memberId, ...result } = await backend.request<MaterialsResponse & { member_id: string }>(`/materials?limit=${PAGE_SIZE}&offset=${offset}`);
+    return data({ ...result, memberId, offset, error: '' }, { headers: backend.headers });
   } catch (error) {
-    return data({ ...empty, offset, error: routeError(error) }, { headers: backend.headers });
+    return data({ ...empty, memberId: '', offset, error: routeError(error) }, { headers: backend.headers });
   }
 }
 
@@ -31,9 +32,16 @@ function uploadedOn(value: string) {
   return Number.isNaN(date.valueOf()) ? '날짜 확인 불가' : uploadDate.format(date);
 }
 
+export function clientLoader({ request, serverLoader }: ClientLoaderFunctionArgs) {
+  return readProjectRouteCache(request, () => serverLoader<typeof loader>());
+}
+
 export default function MaterialsPage() {
-  const { authenticated, onLogin } = useWorkspace();
-  const { items, has_more: hasMore, offset, error } = useLoaderData<typeof loader>();
+  const { authenticated, onLogin, member } = useWorkspace();
+  const loaded = useLoaderData<typeof loader>();
+  useProjectRouteCache(loaded, member?.id);
+  const items = authenticated && loaded.memberId === member?.id ? loaded.items : [];
+  const { has_more: hasMore, offset, error } = loaded;
   const revalidator = useRevalidator();
   const navigation = useNavigation();
   const [searchParams, setSearchParams] = useSearchParams();

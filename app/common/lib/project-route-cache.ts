@@ -9,16 +9,23 @@ export function projectRouteCacheKey(address: string) {
   const url = new URL(address, 'https://salesos.invalid');
   url.searchParams.delete('new');
   url.searchParams.delete('thread');
+  url.searchParams.delete('_refresh');
+  if (url.pathname === '/files') for (const key of ['device', 'root', 'query']) url.searchParams.delete(key);
   url.searchParams.sort();
   return url.pathname + url.search;
 }
 
 // An instance belongs to one browser tab. No tokens, localStorage or server cache.
 export function createProjectRouteCache(now = Date.now, ttl = TTL, maximum = MAX_ENTRIES) {
-  let owner = '', generation = 0;
+  let owner = '', generation = 0, sequence = 0;
+  const pending = new Map<string, number>();
   const entries = new Map<string, { value: ProjectRouteData; expires: number }>();
   const versions = new WeakMap<ProjectRouteData, number>();
-  function invalidate() { generation++; entries.clear(); }
+  function invalidate(pathname?: string) {
+    generation++;
+    if (!pathname) entries.clear();
+    else for (const key of entries.keys()) if (key.split('?', 1)[0] === pathname) entries.delete(key);
+  }
   function setOwner(memberId: string) {
     if (owner !== memberId) { invalidate(); owner = memberId; }
   }
@@ -31,17 +38,30 @@ export function createProjectRouteCache(now = Date.now, ttl = TTL, maximum = MAX
     entries.set(key, { value, expires: now() + ttl });
     while (entries.size > maximum) entries.delete(entries.keys().next().value!);
   }
-  async function read<T extends ProjectRouteData>(key: string, load: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  async function read<T extends ProjectRouteData>(key: string, load: () => Promise<T>, signal: AbortSignal, refresh = false): Promise<T> {
     signal.throwIfAborted();
     const entry = entries.get(key);
-    if (owner && entry && entry.expires > now() && entry.value.memberId === owner) return entry.value as T;
-    entries.delete(key);
+    if (!refresh && owner && entry && entry.expires > now() && entry.value.memberId === owner) return entry.value as T;
+    if (!entry || entry.expires <= now()) entries.delete(key);
     const started = generation;
-    const result = await load();
-    signal.throwIfAborted();
+    const version = ++sequence;
+    pending.set(key, version);
+    let result: T;
+    try { result = await load(); signal.throwIfAborted(); }
+    catch (error) { if (pending.get(key) === version) pending.delete(key); throw error; }
+    const current = pending.get(key) === version;
+    if (current) pending.delete(key);
     // A mutation or account change may finish while this request is in flight.
     // Re-read using the current session instead of restoring its older result.
-    if (started !== generation) return read(key, load, signal);
+    if (started !== generation) return read(key, load, signal, refresh);
+    if (!current) {
+      versions.set(result, -1);
+      const newer = entries.get(key);
+      return newer && newer.value.memberId === owner ? newer.value as T : result;
+    }
+    // Failed/anonymous refreshes cannot leave a previous private response cached.
+    if (result.memberId !== owner) invalidate();
+    if (result.error) entries.delete(key);
     versions.set(result, generation);
     seed(key, result);
     return result;
@@ -54,7 +74,7 @@ function cache() {
   if (typeof window === 'undefined') return undefined;
   return browserCache ??= createProjectRouteCache();
 }
-export function invalidateProjectRouteCache() { cache()?.invalidate(); }
+export function invalidateProjectRouteCache(pathname?: string) { cache()?.invalidate(pathname); }
 export function setProjectRouteCacheOwner(memberId: string) { cache()?.setOwner(memberId); }
 export function resetProjectRouteCache() {
   cache()?.invalidate();
@@ -63,7 +83,7 @@ export function resetProjectRouteCache() {
 export function readProjectRouteCache<T extends ProjectRouteData>(request: Request, serverLoader: () => Promise<T>) {
   const current = cache();
   if (!current || new URL(request.url).searchParams.has('auth_error')) return serverLoader();
-  return current.read(projectRouteCacheKey(request.url), serverLoader, request.signal);
+  return current.read(projectRouteCacheKey(request.url), serverLoader, request.signal, new URL(request.url).searchParams.has('_refresh'));
 }
 
 // Seed initial SSR data after hydration; identity always comes from the parent.

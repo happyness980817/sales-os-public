@@ -194,7 +194,7 @@ def test_summary_revision_rejects_explicit_empty_or_invalid_instruction(app, cli
     response = client.post(url + '/summary', headers=headers, json=body)
     assert response.status_code == 422
     assert calls == []
-    assert client.get(url, headers=headers).json() == own
+    assert client.get(url, headers=headers).json() == {**own, 'member_id': DEV_USER_ID}
 
 
 @pytest.mark.parametrize('previous_summary', ['', '## 현재 목표\n신규 고객 제안'])
@@ -256,7 +256,7 @@ def test_summary_revision_requires_owner_and_rejects_stale_revision_before_model
     current = client.patch(path, headers=headers, json={'name': '수정된 프로젝트', 'revision': own['revision']}).json()
     conflict = client.post(path + '/summary', headers=headers, json=body)
     assert conflict.status_code == 409 and conflict.json()['detail'] == SUMMARY_CONFLICT
-    assert client.get(path, headers=headers).json() == current and calls == []
+    assert client.get(path, headers=headers).json() == {**current, 'member_id': DEV_USER_ID} and calls == []
 
 
 @pytest.mark.asyncio
