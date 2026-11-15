@@ -71,6 +71,7 @@ def test_summary_api_only_uses_own_project_and_caches_ready_output(app, client, 
     assert result['summary_updated_at'] and result['summary_error'] is None
     assert client.post(path, headers=headers).json() == result and len(calls) == 1
     request = calls[0]
+    assert request['model'] == 'gpt-6.1-sol'
     assert request['store'] is False and request['max_output_tokens'] == 1200 and 'tools' not in request
     assert 'SYNTHETIC-ALLOWED' not in request['instructions']
     payload = json.loads(request['input'][0]['content'][0]['text'])
@@ -152,11 +153,12 @@ async def test_summary_sources_are_bounded_and_include_recently_active_old_threa
 @pytest.mark.asyncio
 @pytest.mark.parametrize('storage_failure', [False, True])
 async def test_summary_usage_tracks_owner_and_never_reverses_completed_summary(app, monkeypatch, storage_failure):
+    app.state.projects.settings.openai_model = 'gpt-6-astra'
     own, _ = await fixture_project(app)
     async def complete(_):
         return SimpleNamespace(status='completed', output_text='## 목표\n검증',
                                usage=SimpleNamespace(input_tokens=100, output_tokens=20))
-    model(app, monkeypatch, complete)
+    calls = model(app, monkeypatch, complete)
     if storage_failure:
         original = app.state.repo.insert
         async def insert(namespace, *args, **kwargs):
@@ -165,6 +167,7 @@ async def test_summary_usage_tracks_owner_and_never_reverses_completed_summary(a
             return await original(namespace, *args, **kwargs)
         monkeypatch.setattr(app.state.repo, 'insert', insert)
     result = await app.state.projects.summarize(DEV_USER_ID, own['id'])
+    assert [request['model'] for request in calls] == ['gpt-6-astra']
     assert result['summary_status'] == 'ready' and result['summary_error'] is None
     assert (await app.state.projects.get(DEV_USER_ID, own['id']))['summary_status'] == 'ready'
     rows = await app.state.repo.list('usage', DEV_USER_ID)
@@ -174,6 +177,7 @@ async def test_summary_usage_tracks_owner_and_never_reverses_completed_summary(a
         assert len(rows) == 1
         assert rows[0]['data']['kind'] == 'project_summary'
         assert rows[0]['data']['project_id'] == own['id']
+        assert rows[0]['data']['model'] == 'gpt-6-astra'
         assert rows[0]['data']['input_tokens'] == 100 and rows[0]['data']['output_tokens'] == 20
 
 

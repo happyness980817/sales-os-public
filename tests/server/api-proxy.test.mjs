@@ -28,26 +28,28 @@ test('preserves OAuth redirects for the browser instead of following them', asyn
   assert.equal(response.headers.get('location'), '/connections?connected=1');
 });
 
-test('streams ChatKit events without waiting for the entire agent response', async () => {
-  let controller;
-  const body = new ReadableStream({ start(value) { controller = value; controller.enqueue(new TextEncoder().encode('data: first\n\n')); } });
-  const result = await proxyApiRequest(new Request('http://localhost:5173/api/chatkit', { method: 'POST', body: '{}', headers: { 'X-SalesOS-Model': 'gpt-4.1', 'X-SalesOS-Project': 'prj_test' } }), {
-    fetchImpl: async (_url, init) => {
-      assert.equal(init.headers.get('x-salesos-model'), 'gpt-4.1');
-      assert.equal(init.headers.get('x-salesos-project'), 'prj_test');
-      return new Response(body, { headers: { 'content-type': 'text/event-stream', 'content-length': '999', 'content-encoding': 'gzip' } });
-    },
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna']) {
+  test(`streams ChatKit events using ${model} without waiting for the entire agent response`, async () => {
+    let controller;
+    const body = new ReadableStream({ start(value) { controller = value; controller.enqueue(new TextEncoder().encode('data: first\n\n')); } });
+    const result = await proxyApiRequest(new Request('http://localhost:5173/api/chatkit', { method: 'POST', body: '{}', headers: { 'X-SalesOS-Model': model, 'X-SalesOS-Project': 'prj_test' } }), {
+      fetchImpl: async (_url, init) => {
+        assert.equal(init.headers.get('x-salesos-model'), model);
+        assert.equal(init.headers.get('x-salesos-project'), 'prj_test');
+        return new Response(body, { headers: { 'content-type': 'text/event-stream', 'content-length': '999', 'content-encoding': 'gzip' } });
+      },
+    });
+    assert.equal(result.headers.get('x-accel-buffering'), 'no');
+    assert.equal(result.headers.has('content-length'), false);
+    assert.equal(result.headers.has('content-encoding'), false);
+    const reader = result.body.getReader();
+    assert.equal(new TextDecoder().decode((await reader.read()).value), 'data: first\n\n');
+    controller.enqueue(new TextEncoder().encode('data: last\n\n'));
+    controller.close();
+    assert.equal(new TextDecoder().decode((await reader.read()).value), 'data: last\n\n');
+    assert.equal((await reader.read()).done, true);
   });
-  assert.equal(result.headers.get('x-accel-buffering'), 'no');
-  assert.equal(result.headers.has('content-length'), false);
-  assert.equal(result.headers.has('content-encoding'), false);
-  const reader = result.body.getReader();
-  assert.equal(new TextDecoder().decode((await reader.read()).value), 'data: first\n\n');
-  controller.enqueue(new TextEncoder().encode('data: last\n\n'));
-  controller.close();
-  assert.equal(new TextDecoder().decode((await reader.read()).value), 'data: last\n\n');
-  assert.equal((await reader.read()).done, true);
-});
+}
 
 test('does not reveal internal errors, credentials, or infrastructure details', async () => {
   const response = await proxyApiRequest(new Request('http://localhost:5173/api/config'), {

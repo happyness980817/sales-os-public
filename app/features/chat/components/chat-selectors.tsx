@@ -30,6 +30,7 @@ export function ChatSelectors({ models, selectedModelId, onModelChange, projects
   const items = ownPage ? list.data!.items : projects;
   const error = list.data?.error;
   const busy = list.state !== 'idle';
+  const selectedModel = models.find(model => model.id === selectedModelId);
   const visibleProjects = currentProject && !items.some(project => project.id === currentProject.id) ? [currentProject, ...items] : items;
   useEffect(() => setOpen(null), [location.pathname, location.search]);
   useEffect(() => {
@@ -55,15 +56,18 @@ export function ChatSelectors({ models, selectedModelId, onModelChange, projects
     projectTrigger.current?.focus();
     if (projectId !== currentProjectId) void navigate(projectId ? '/projects/' + projectId + '/chat' : '/chat');
   }
-  return <div ref={root} className="flex items-center gap-2 sm:gap-4" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(null); }}>
-    <div className="relative">
-      <button ref={modelTrigger} className="flex h-9 items-center gap-2 rounded-md px-1 text-sm font-semibold whitespace-nowrap hover:text-muted" aria-expanded={open === 'model'} aria-controls={id + '-models'} onClick={() => toggle('model')}>모델 선택<ChevronDown size={14} className="text-muted"/></button>
+  return <div ref={root} className="flex min-w-0 items-center gap-2 sm:gap-4" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(null); }}>
+    <div className="relative min-w-0">
+      <button ref={modelTrigger} className="flex h-9 max-w-full items-center gap-2 rounded-md px-1 text-sm font-semibold whitespace-nowrap hover:text-muted" aria-expanded={open === 'model'} aria-controls={id + '-models'} onClick={() => toggle('model')}>
+        <span className="flex min-w-0 flex-col items-start gap-0.5 leading-tight sm:flex-row sm:items-center sm:gap-2"><span>모델 선택</span>{selectedModel && <span className="max-w-36 truncate text-xs font-normal text-muted" title={selectedModel.label}>{selectedModel.label}</span>}</span>
+        <ChevronDown size={14} className="shrink-0 text-muted"/>
+      </button>
       {open === 'model' && <div id={id + '-models'} aria-label="모델 선택 목록" className="absolute top-full left-0 z-30 mt-2 w-64 max-w-[calc(100vw-40px)] rounded-xl border border-line bg-panel p-1.5 shadow-xl">
         {models.map(model => <button key={model.id} className={optionClass} aria-pressed={selectedModelId === model.id} onClick={() => { onModelChange(model.id); setOpen(null); modelTrigger.current?.focus(); }}><span className="min-w-0 flex-1"><span className="block">{model.label}</span>{model.description && <span className="mt-1 block text-xs text-muted">{model.description}</span>}</span>{selectedModelId === model.id && <Check size={16} className="shrink-0"/>}</button>)}
         {!models.length && <p className="px-3 py-2 text-xs font-normal text-muted">모델 정보를 불러오지 못했습니다.</p>}
       </div>}
     </div>
-    <div className="relative">
+    <div className="relative shrink-0">
       <button ref={projectTrigger} className="flex h-9 items-center gap-2 rounded-md px-1 text-sm font-semibold whitespace-nowrap hover:text-muted" aria-expanded={open === 'project'} aria-controls={id + '-projects'} onClick={() => toggle('project')}>프로젝트<ChevronDown size={14} className="text-muted"/></button>
       {open === 'project' && <div id={id + '-projects'} aria-label="프로젝트 선택 목록" className="absolute top-full left-0 z-30 mt-2 w-64 max-w-[calc(100vw-40px)] rounded-xl border border-line bg-panel p-1.5 shadow-xl max-sm:-left-20">
         <button className={optionClass} aria-pressed={!currentProjectId} onClick={() => selectProject()}><span className="flex-1">프로젝트 없음</span>{!currentProjectId && <Check size={16}/>}</button>
