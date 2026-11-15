@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ArrowLeft, ArrowRight, Mail, UserMinus, UserPlus, UsersRound } from 'lucide-react';
 import { Modal } from '~/common/components/ui';
+import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '~/common/components/ui/avatar';
 
 export interface ProjectMember {
   id: string;
@@ -22,24 +23,21 @@ function initials(member: ProjectMember) {
 }
 
 function MemberAvatar({ member, size = 'sm' }: { member: ProjectMember; size?: 'sm' | 'md' }) {
-  const [failedImage, setFailedImage] = useState<string | undefined>();
-  return <span role="img" aria-label={memberName(member)} title={memberName(member)} className={'relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-panel bg-zinc-800 font-medium text-zinc-200 ring-1 ring-white/5 ' + (size === 'md' ? 'size-10 text-xs' : 'size-8 text-[10px]')}>
-    {member.avatar_url && member.avatar_url !== failedImage
-      ? <img src={member.avatar_url} alt="" loading="lazy" referrerPolicy="no-referrer" className="size-full object-cover" onError={() => setFailedImage(member.avatar_url)}/>
-      : initials(member)}
-  </span>;
+  return <Avatar size={size === 'md' ? 'lg' : 'default'} role="img" aria-label={memberName(member)} title={memberName(member)} className="border-2 border-panel font-medium">
+    <AvatarImage src={member.avatar_url} alt="" referrerPolicy="no-referrer" className="object-cover"/>
+    <AvatarFallback className={'bg-zinc-800 text-zinc-200 ' + (size === 'md' ? 'text-xs' : 'text-[10px]')}>{initials(member)}</AvatarFallback>
+  </Avatar>;
 }
 
 export function MemberAvatars({ members, limit = 3, size = 'sm' }: { members: ProjectMember[]; limit?: number; size?: 'sm' | 'md' }) {
   const shown = members.slice(0, Math.max(1, limit));
   const remaining = members.length - shown.length;
-  if (!members.length) return <span aria-label="멤버 정보 없음" className="inline-flex size-8 items-center justify-center rounded-full border border-line text-muted"><UsersRound size={14}/></span>;
-  return <span role="group" aria-label={'프로젝트 멤버 ' + members.length + '명'} className="isolate inline-flex items-center -space-x-2">
+  if (!members.length) return <Avatar role="img" aria-label="멤버 정보 없음" className="border border-line"><AvatarFallback><UsersRound size={14}/></AvatarFallback></Avatar>;
+  return <AvatarGroup role="group" aria-label={'프로젝트 멤버 ' + members.length + '명'} className="isolate inline-flex items-center">
     {shown.map(member => <MemberAvatar key={member.id} member={member} size={size}/>)}
-    {remaining > 0 && <span title={members.slice(shown.length).map(memberName).join(', ')} aria-label={'다른 멤버 ' + remaining + '명'} className={'relative inline-flex shrink-0 items-center justify-center rounded-full border-2 border-panel bg-zinc-900 font-medium text-muted ring-1 ring-white/5 ' + (size === 'md' ? 'size-10 text-xs' : 'size-8 text-[10px]')}>+{remaining}</span>}
-  </span>;
+    {remaining > 0 && <AvatarGroupCount title={members.slice(shown.length).map(memberName).join(', ')} aria-label={'다른 멤버 ' + remaining + '명'} className={'border-2 border-panel bg-zinc-900 font-medium text-muted ' + (size === 'md' ? 'text-xs' : 'text-[10px]')}>+{remaining}</AvatarGroupCount>}
+  </AvatarGroup>;
 }
-
 export function ProjectMembersDialog({ projectName, members, viewerId, canManage = false, onClose }: {
   projectName: string;
   members: ProjectMember[];
