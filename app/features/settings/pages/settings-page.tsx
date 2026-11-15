@@ -1,0 +1,8 @@
+import { ArrowRight, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { useWorkspace } from '~/common/lib/workspace';
+export default function SettingsPage() {
+  const { member, session, signedIn, onLogin, signOut, config } = useWorkspace();
+  const navigate = useNavigate();
+  return <section className="page"><div className="page-heading"><div><div className="eyebrow">YOUR PREFERENCES</div><h1>설정</h1><p>계정과 워크스페이스를 관리하세요.</p></div></div><div className="section-label"><h2>계정</h2></div><div className="settings-list"><div className="settings-row"><span><strong>로그인 계정</strong><small>{member?.email || session?.user.email || '로그인하지 않았습니다'}</small></span>{signedIn ? <button className="button button-secondary compact" onClick={() => void signOut()}><LogOut size={15}/>로그아웃</button> : <button className="button button-secondary compact" onClick={onLogin}>로그인</button>}</div><div className="settings-row"><span><strong>화면 테마</strong><small>업무에 집중할 수 있는 어두운 화면</small></span><span className="setting-value">다크</span></div><div className="settings-row"><span><strong>기준 시간대</strong><small>일정과 알림에 적용됩니다</small></span><span className="setting-value">서울 · UTC+9</span></div></div><div className="section-label settings-section"><h2>연결과 자료</h2></div><div className="settings-list"><button className="settings-row actionable" onClick={() => navigate('/connections')}><span><strong>서비스 연결 관리</strong><small>계정별 자료 사용과 연결 해제</small></span><ArrowRight size={17}/></button><button className="settings-row actionable" onClick={() => navigate('/files')}><span><strong>로컬 폴더 관리</strong><small>PC 연결 프로그램에서 읽기 범위를 선택합니다</small></span><ArrowRight size={17}/></button></div><p className="version-label">SALES-OS {config?.version || '0.1.0'}</p></section>;
+}

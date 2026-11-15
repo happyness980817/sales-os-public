@@ -1,0 +1,47 @@
+{
+  "name": "sales-os",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "dotenv --no-expand -e .runtime/server.env -- concurrently --kill-others --success first --names api,web \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "uv run --directory services/api --no-sync uvicorn salesos_api.main:app --host 127.0.0.1 --port 8000 --no-access-log",
+    "dev:web": "wait-on --timeout 60000 --httpTimeout 1000 http-get://127.0.0.1:8000/api/health && react-router dev",
+    "build": "react-router build",
+    "start": "concurrently --kill-others --success first --names api,web \"npm:start:api\" \"npm:start:web\"",
+    "start:api": "uv run --directory services/api --no-sync uvicorn salesos_api.main:app --host 127.0.0.1 --port 8000 --no-access-log",
+    "start:web": "wait-on --timeout 60000 --httpTimeout 1000 http-get://127.0.0.1:8000/api/health && react-router-serve ./build/server/index.js",
+    "typecheck": "react-router typegen && tsc --noEmit",
+    "test:server": "node --test tests/server/*.test.mjs"
+  },
+  "dependencies": {
+    "@openai/chatkit-react": "^1.6.1",
+    "@react-router/node": "^8.5.1",
+    "@react-router/serve": "^8.5.1",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.3",
+    "concurrently": "^10.0.7",
+    "dotenv-cli": "^11.1.0",
+    "isbot": "^5.1.36",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "react-router": "^8.5.1",
+    "remark-gfm": "^4.0.1",
+    "wait-on": "^9.5.1"
+  },
+  "devDependencies": {
+    "@react-router/dev": "^8.5.1",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^22",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.3"
+  },
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.22.0"
+  }
+}

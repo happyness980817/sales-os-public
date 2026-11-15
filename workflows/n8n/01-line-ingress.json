@@ -1,0 +1,708 @@
+{
+  "name": "SALES-OS · LINE event-driven conversation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "salesos-line-events",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "salesos-1",
+      "name": "LINE webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "salesos-line-events-v1"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Edit this non-secret origin after import. Do not put tokens in this node.\nconst apiBase = 'https://REPLACE-SALES-OS-HOST.invalid';\nif (apiBase.includes('REPLACE-') || !/^https:\\/\\/[^\\s/?#@]+(?::\\d+)?$/.test(apiBase)) {\n  throw new Error('Configure SALES-OS URL: enter the public HTTPS origin without a trailing slash.');\n}\nconst item = $input.first();\nreturn [{ ...item, json: { ...item.json, api_base: apiBase } }];"
+      },
+      "id": "salesos-2",
+      "name": "Configure SALES-OS URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const item = $input.first();\nconst fail = (statusCode, error) => [{ json: { forward: false, statusCode, responseBody: { ok: false, error } } }];\nconst headers = item.json.headers || {};\nconst signature = Object.entries(headers).find(([key]) => key.toLowerCase() === 'x-line-signature')?.[1];\nif (typeof signature !== 'string' || !/^[A-Za-z0-9+/]{43}=$/.test(signature)) return fail(401, 'invalid_signature');\nif (!item.binary?.data) return fail(500, 'raw_body_unavailable');\nlet raw;\ntry { raw = await this.helpers.getBinaryDataBuffer(0, 'data'); }\ncatch { return fail(500, 'raw_body_unavailable'); }\nif (!raw || raw.length === 0) return fail(400, 'empty_body');\nif (raw.length > 1000000) return fail(413, 'body_too_large');\n// Never stringify item.json.body: LINE signs the original bytes, including whitespace.\nreturn [{ json: { forward: true, api_base: item.json.api_base,\n  envelope: { raw_body_base64: raw.toString('base64'), signature } } }];"
+      },
+      "id": "salesos-3",
+      "name": "Preserve LINE raw bytes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "forward",
+              "leftValue": "={{ $json.forward }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "salesos-4",
+      "name": "Can forward event",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.api_base + '/api/internal/line/events' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.envelope) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "salesos-5",
+      "name": "Verify and store event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        -100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INTERNAL_CREDENTIAL_ID",
+          "name": "SALES-OS internal bearer"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const response = $input.first().json;\nconst status = Number(response.statusCode);\nconst body = response.body;\nif (status >= 200 && status < 300 && body && typeof body === 'object' && body.ok === true) {\n  const accepted = Number.isInteger(body.accepted) && body.accepted > 0;\n  const duplicate = Number.isInteger(body.duplicates) && body.duplicates > 0;\n  return [{ json: { statusCode: 200, responseBody: { ok: true }, processWork: accepted || duplicate } }];\n}\nconst statusCode = [400, 401, 403, 413].includes(status) ? status : 503;\nreturn [{ json: { statusCode, responseBody: { ok: false, error: 'event_not_accepted' }, processWork: false } }];"
+      },
+      "id": "salesos-6",
+      "name": "Map webhook result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.responseBody) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        },
+        "enableResponseOutput": false
+      },
+      "id": "salesos-7",
+      "name": "Respond to LINE",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "name": "Continue accepted event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Respond to Webhook v1.4 forwards its input after sending the HTTP response.\nconst input = $input.first().json;\nif (input.statusCode !== 200 || input.processWork !== true) return [];\nreturn [{ json: { api_base: $('Configure SALES-OS URL').first().json.api_base } }];"
+      },
+      "position": [
+        1540,
+        0
+      ],
+      "id": "salesos-post-ack"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.api_base + '/api/internal/reconcile' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "neverError": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "salesos-10",
+      "name": "Process queued jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INTERNAL_CREDENTIAL_ID",
+          "name": "SALES-OS internal bearer"
+        }
+      }
+    },
+    {
+      "name": "Review queued work",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const result = $input.first().json;\nif (!Number.isInteger(result.processed) || result.processed < 0 || result.processed > 3) {\n  throw new Error('Invalid reconcile response.');\n}\nconst more = result.busy === true || result.processed === 3;\n// One execution: retry a busy worker or a full batch at most 12 times.\nif (more && $runIndex >= 12) {\n  throw new Error('Queue processing limit reached after webhook acknowledgement. Use recovery workflow for remaining jobs.');\n}\nreturn [{ json: { api_base: $('Configure SALES-OS URL').first().json.api_base, retry_reconcile: more } }];"
+      },
+      "position": [
+        1980,
+        0
+      ],
+      "id": "salesos-review-queue"
+    },
+    {
+      "name": "Queue needs another pass",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "retry-queue",
+              "leftValue": "={{ $json.retry_reconcile }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        2200,
+        0
+      ],
+      "id": "salesos-retry-queue"
+    },
+    {
+      "name": "Wait 5 seconds within execution",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "position": [
+        2200,
+        -220
+      ],
+      "id": "salesos-busy-wait"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.api_base + '/api/internal/line/outbound/claim' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "neverError": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "salesos-14",
+      "name": "Claim one outbound message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INTERNAL_CREDENTIAL_ID",
+          "name": "SALES-OS internal bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const message = $input.first().json.message;\nif (message === null) return [];\nif (!message || !/^[a-f0-9]{64}$/.test(message.id || '') ||\n    !/^U[a-fA-F0-9]{32}$/.test(message.to || '') ||\n    !/^[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}$/.test(message.retry_key || '') ||\n    !/^[A-Za-z0-9_-]{20,200}$/.test(message.lease_token || '') ||\n    !Array.isArray(message.messages) || message.messages.length < 1 || message.messages.length > 5 ||\n    message.messages.some(m => !m || m.type !== 'text' || typeof m.text !== 'string' || !m.text.length || m.text.length > 5000)) {\n  throw new Error('Invalid backend outbox contract. No LINE message was sent.');\n}\n// The backend chooses and verifies the owner -> LINE user mapping; never infer or replace it here.\nreturn [{ json: { api_base: $('Configure SALES-OS URL').first().json.api_base, message } }];"
+      },
+      "id": "salesos-15",
+      "name": "Validate claimed message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.line.me/v2/bot/message/push",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ to: $json.message.to, messages: $json.message.messages }) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Line-Retry-Key",
+              "value": "={{ $json.message.retry_key }}"
+            }
+          ]
+        }
+      },
+      "id": "salesos-16",
+      "name": "Push claimed message to LINE",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_LINE_CREDENTIAL_ID",
+          "name": "SALES-OS LINE channel bearer"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const response = $input.first().json;\nconst claimed = $('Validate claimed message').first(0, $runIndex).json;\nconst status = Number(response.statusCode);\nconst headers = response.headers || {};\nconst previous = Object.entries(headers).find(([key]) => key.toLowerCase() === 'x-line-accepted-request-id')?.[1];\nconst accepted = (status >= 200 && status < 300) ||\n  (status === 409 && typeof previous === 'string' && previous.length > 0);\nreturn [{ json: { api_base: claimed.api_base, id: claimed.message.id,\n  result: { accepted, lease_token: claimed.message.lease_token } } }];"
+      },
+      "id": "salesos-17",
+      "name": "Record LINE acceptance",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.api_base + '/api/internal/line/outbound/' + encodeURIComponent($json.id) + '/result' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.result) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "neverError": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "salesos-18",
+      "name": "Acknowledge outbound lease",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3300,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INTERNAL_CREDENTIAL_ID",
+          "name": "SALES-OS internal bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const result = $input.first().json;\nif (result.ok !== true) throw new Error('Backend did not acknowledge outbound result.');\nif (result.status !== 'succeeded' && result.duplicate !== true) {\n  throw new Error('LINE did not accept delivery. Backend recorded the failure; use recovery after resolving it.');\n}\nreturn [{ json: { ok: true, status: result.status || 'already_recorded' } }];"
+      },
+      "id": "salesos-19",
+      "name": "Validate acknowledgement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        0
+      ]
+    },
+    {
+      "name": "Continue bounded outbox drain",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// No schedule or child workflow: at most ten accepted deliveries in this execution.\n// Each retry uses the current run's claim/lease, never an earlier recipient or payload.\nif ($runIndex >= 9) return [];\nreturn [{ json: { api_base: $('Configure SALES-OS URL').first().json.api_base } }];"
+      },
+      "position": [
+        3740,
+        0
+      ],
+      "id": "salesos-drain-outbox"
+    }
+  ],
+  "connections": {
+    "LINE webhook": {
+      "main": [
+        [
+          {
+            "node": "Configure SALES-OS URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure SALES-OS URL": {
+      "main": [
+        [
+          {
+            "node": "Preserve LINE raw bytes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve LINE raw bytes": {
+      "main": [
+        [
+          {
+            "node": "Can forward event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can forward event": {
+      "main": [
+        [
+          {
+            "node": "Verify and store event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to LINE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify and store event": {
+      "main": [
+        [
+          {
+            "node": "Map webhook result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map webhook result": {
+      "main": [
+        [
+          {
+            "node": "Respond to LINE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to LINE": {
+      "main": [
+        [
+          {
+            "node": "Continue accepted event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue accepted event": {
+      "main": [
+        [
+          {
+            "node": "Process queued jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process queued jobs": {
+      "main": [
+        [
+          {
+            "node": "Review queued work",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review queued work": {
+      "main": [
+        [
+          {
+            "node": "Queue needs another pass",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queue needs another pass": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 seconds within execution",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Claim one outbound message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 seconds within execution": {
+      "main": [
+        [
+          {
+            "node": "Process queued jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim one outbound message": {
+      "main": [
+        [
+          {
+            "node": "Validate claimed message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate claimed message": {
+      "main": [
+        [
+          {
+            "node": "Push claimed message to LINE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push claimed message to LINE": {
+      "main": [
+        [
+          {
+            "node": "Record LINE acceptance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record LINE acceptance": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge outbound lease",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge outbound lease": {
+      "main": [
+        [
+          {
+            "node": "Validate acknowledgement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate acknowledgement": {
+      "main": [
+        [
+          {
+            "node": "Continue bounded outbox drain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue bounded outbox drain": {
+      "main": [
+        [
+          {
+            "node": "Claim one outbound message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul",
+    "executionTimeout": 300,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false
+  },
+  "tags": []
+}

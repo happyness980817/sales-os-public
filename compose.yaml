@@ -1,0 +1,22 @@
+services:
+  salesos:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SALESOS_PUBLIC_URL: ${SALESOS_PUBLIC_URL:-http://localhost:3000}
+    ports:
+      - "${SALESOS_BIND_ADDRESS:-127.0.0.1}:${SALESOS_WEB_PORT:-3000}:3000"
+    # Required only at runtime; never copied into the image.
+    env_file:
+      - path: ${SALESOS_ENV_FILE:-.runtime/server.env}
+        required: true
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      SALESOS_API_ORIGIN: http://127.0.0.1:8000
+      # Set the actual externally reachable origin for OAuth/LINE callbacks.
+      SALESOS_PUBLIC_URL: ${SALESOS_PUBLIC_URL:-http://localhost:3000}
+    restart: unless-stopped
+    stop_grace_period: 15s

@@ -1,0 +1,29 @@
+[project]
+name = "salesos-api"
+version = "0.1.0"
+description = "SALES-OS authenticated ChatKit and workflow API"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "openai-chatkit>=1.6,<2",
+  "openai>=2,<3",
+  "httpx>=0.28,<1",
+  "pydantic-settings>=2.8,<3",
+  "cryptography>=44,<48",
+  "python-multipart>=0.0.20,<1",
+  "pypdf>=5,<7",
+  "openpyxl>=3.1,<4",
+  "pillow>=11,<13",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["../../tests/api"]
+
+[tool.uv]
+package = false

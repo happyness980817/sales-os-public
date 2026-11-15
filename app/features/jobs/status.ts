@@ -1,0 +1,1 @@
+export const STATUS: Record<string, string> = { pending: '대기 중', processing: '진행 중', running: '진행 중', waiting_input: '입력 필요', waiting_device: 'PC 연결 대기', succeeded: '완료', completed: '완료', failed: '실패', cancelled: '취소됨', retry_wait: '다시 시도 대기', unknown: '확인 필요', partially_applied: '일부 완료', expired: '만료됨' };

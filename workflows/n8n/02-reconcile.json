@@ -1,0 +1,142 @@
+{
+  "name": "SALES-OS · RECOVERY ONLY · queued work",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "salesos-8",
+      "name": "Recovery only - every 30 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "notes": "Leave this workflow unpublished during normal operation. Manually recover pending work when required.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Edit this non-secret origin after import. Do not put tokens in this node.\nconst apiBase = 'https://REPLACE-SALES-OS-HOST.invalid';\nif (apiBase.includes('REPLACE-') || !/^https:\\/\\/[^\\s/?#@]+(?::\\d+)?$/.test(apiBase)) {\n  throw new Error('Configure SALES-OS URL: enter the public HTTPS origin without a trailing slash.');\n}\nconst item = $input.first();\nreturn [{ ...item, json: { ...item.json, api_base: apiBase } }];"
+      },
+      "id": "salesos-9",
+      "name": "Configure SALES-OS URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.api_base + '/api/internal/reconcile' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "neverError": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "salesos-10",
+      "name": "Process queued jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_INTERNAL_CREDENTIAL_ID",
+          "name": "SALES-OS internal bearer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const result = $input.first().json;\nif (!Number.isInteger(result.processed) || result.processed < 0 || result.processed > 3) {\n  throw new Error('Invalid reconcile response.');\n}\nreturn [{ json: { processed: result.processed, busy: result.busy === true } }];"
+      },
+      "id": "salesos-11",
+      "name": "Validate reconcile result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Configure SALES-OS URL": {
+      "main": [
+        [
+          {
+            "node": "Process queued jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process queued jobs": {
+      "main": [
+        [
+          {
+            "node": "Validate reconcile result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recovery only - every 30 minutes": {
+      "main": [
+        [
+          {
+            "node": "Configure SALES-OS URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul",
+    "executionTimeout": 300,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false
+  },
+  "tags": []
+}

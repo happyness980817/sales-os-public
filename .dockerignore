@@ -1,0 +1,25 @@
+# Allow only source/build inputs into the build context. No runtime settings or keys.
+**
+!package.json
+!package-lock.json
+!react-router.config.ts
+!vite.config.ts
+!tsconfig.json
+!app/
+!app/**
+!public/
+!public/**
+!services/
+!services/api/
+!services/api/pyproject.toml
+!services/api/uv.lock
+!services/api/salesos_api/
+!services/api/salesos_api/**
+**/.env
+**/.env.*
+**/*.env
+**/*.pem
+**/*.key
+**/*.p12
+**/__pycache__/
+**/*.pyc

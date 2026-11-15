@@ -1,0 +1,28 @@
+{
+  "name": "salesos-desktop-connector",
+  "productName": "SALES-OS Connect",
+  "version": "0.1.0",
+  "description": "지정한 업무 폴더를 SALES-OS에 연결하는 읽기 전용 Windows 앱",
+  "author": "SALES-OS contributors",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "package": "npm run build && electron-forge package",
+    "make": "npm run build && electron-forge make"
+  },
+  "config": { "forge": "./forge.config.cjs" },
+  "devDependencies": {
+    "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-squirrel": "8.0.1",
+    "@types/node": "26.6.5",
+    "electron": "44.7.0",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}
